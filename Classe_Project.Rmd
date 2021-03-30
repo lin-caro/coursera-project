@@ -1,0 +1,141 @@
+---
+title: "Classe Prediction"
+author: "Caroline"
+date: "3/29/2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(caret)
+library(dplyr)
+library(rattle)
+library(randomForest)
+
+training <- read.csv("/Users/clin/Documents/Data_Products/Courses/Coursera - Practical Machine Learning/pml-training.csv")
+testing <- read.csv("/Users/clin/Documents/Data_Products/Courses/Coursera - Practical Machine Learning/pml-testing.csv")
+```
+
+## Introduction
+
+We want to predict the classe variable based on the data from accelerometers on the belt, forearm, arm, and dumbbell of 6 participants. 
+Specific details of the classe variable are as follows:
+"Six young health participants were asked to perform one set of 10 repetitions of the Unilateral Dumbbell Biceps Curl in five different fashions: exactly according to the specification (Class A), throwing the elbows to the front (Class B), lifting the dumbbell only halfway (Class C), lowering the dumbbell only halfway (Class D) and throwing the hips to the front (Class E)." (Source: <http://groupware.les.inf.puc-rio.br/har>). 
+
+There are two datasets: training and testing
+- The training dataset has 160 variables with 19,622 observations. 
+- The testing dataset has 160 variables with 20 observations. 
+
+## Covariate Selection
+
+```{r covariate selection, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+#remove those columns with near zero variance
+nsv <- nearZeroVar(training, saveMetrics=TRUE)
+training_nzv <- training[,!nsv$nzv]
+
+#Choose the relevant dependent variables
+#getting rid of the non-numerical variables
+colnames(training)
+custom_training <- training_nzv[,-c(1:5)]
+
+
+#getting rid of columns which are 90% or more NA values
+custom_training <- custom_training[,sapply(custom_training, 
+       function(x) sum(is.na(x))/dim(custom_training)[1]) <= 0.9]
+```
+
+To start off, we want to look solely at the training data set and choose the relevant dependent variables. The following variables were removed from the training set:
+- Variables which have a 90% missing data. 
+- Non-numerical variables, which includes variables such as the user name and timestamp.
+- Variables that have near zero variance. These variables will not change the model output and therefore is of no use. 
+
+53 predictor variables are left to be used to predict the classe variable. 
+
+## Cross Validation
+
+```{r cross validation, include=FALSE}
+#Split training set into a train and test set
+inTrain <- createDataPartition(y=custom_training$classe, p=0.75, list=FALSE)
+#75% of training and %25 for testing
+train <- custom_training[inTrain,]
+test <- custom_training[-inTrain,] 
+
+#10-fold cross validation
+train.control <- trainControl(method = "cv", number = 10)
+```
+
+The validation set approach is derived from the training dataset after covariate selection, where 75% of the data is used for training, and 25% of the data is used to test the model. 
+
+To improve the accuracy estimate for the classication tree model, a 10-fold cross validation method was used. 
+
+## Predictions using Models
+
+Three different models are used to try to predict the classe variable: 
+1) classification tree
+2) random forest trees
+3) generalized boosting model
+
+We look at the accuracy results of each to determine which model is best for prediction. 
+
+# Classification Tree
+
+```{r classification tree model, include=FALSE}
+set.seed(35)
+modFit_rpart <- train(classe ~., method="rpart", data=train, trControl=train.control)
+pred_rpart <- predict(modFit_rpart, newdata=test)
+```
+
+```{r classification tree plot, echo=FALSE}
+fancyRpartPlot(modFit_rpart$finalModel)
+```
+
+```{r cm for classification tree}
+modFit_rpart
+confusionMatrix(pred_rpart, as.factor(test$classe))
+```
+
+
+# Random forest trees
+
+```{r random tree model, include=FALSE}
+set.seed(36)
+modFit_rf <- randomForest(as.factor(classe)~., data=train, method="rf", prox=TRUE)
+pred_rf <- predict(modFit_rf, newdata=test)
+```
+
+```{r random tree results, echo=FALSE}
+modFit_rf
+```
+
+```{r cm for random forest}
+confusionMatrix(pred_rf, as.factor(test$classe))
+```
+
+
+# Generalized Boosting model
+
+```{r gbm model, include=FALSE}
+set.seed(37)
+modFit_gbm <- train(classe~., method="gbm", data=train, verbose=FALSE)
+pred_gbm <- predict(modFit_gbm, newdata=test)
+```
+
+```{r gbm cm, echo=FALSE}
+confusionMatrix(pred_gbm, as.factor(test$classe))
+```
+
+# Conclusion and Results
+
+The accuracy on the test set for all models were as follows:
+56.42% accuracy for classification tree model
+99.82% accuracy for random forest model
+98.76% accuracy for generalized boosting model
+
+As the random forest model had the highest accuracy from the test results, we will use this model to predict the results of the classe variables on the testing set. The out of sample error is 0.23% from the random forest model.
+
+```{r rf test results, include=FALSE}
+predict(modFit_rf, newdata=testing)
+```
+
+
